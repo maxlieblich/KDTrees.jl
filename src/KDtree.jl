@@ -1,5 +1,7 @@
 module KDtree
 
+    using Base.Collections
+
     using ArrayViews
 
     export KDTree

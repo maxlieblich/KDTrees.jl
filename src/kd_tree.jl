@@ -213,53 +213,45 @@ function k_nearest_neighbour{T <: FloatingPoint}(tree::KDTree, point::Array{T, 1
                      " gave a point with dimension ", size(point,1), "."))
     end
 
-    best_idxs = [-1 for i in 1:k]
-    best_dists = [typemax(T) for i in 1:k]
+    pq = PriorityQueue{Int, T}(Base.Order.Reverse) # peek gives largest
+    for i in 1:k
+        enqueue!(pq, -i, typemax(T)) # Cant have repeating keys
+    end
 
-    _k_nearest_neighbour(tree, point, k, best_idxs, best_dists)
+    _k_nearest_neighbour(tree, point, k, pq)
 
    # Convert from indices in tree to indices in data
-    true_indices = [tree.indices[get_point_index(tree, x)] for x in best_idxs]
+    true_indices = [tree.indices[get_point_index(tree, x)] for x in keys(pq)]
 
-    return true_indices, sqrt(best_dists)
+    return true_indices, sqrt(collect(values(pq)))
 end
 
 
 function _k_nearest_neighbour{T <: FloatingPoint}(tree::KDTree,
                                                   point::Array{T, 1},
                                                   k::Int,
-                                                  best_idxs ::Array{Int, 1},
-                                                  best_dists::Array{T, 1},
+                                                  pq::PriorityQueue,
                                                   index::Int=1)
 
     min_d, max_d = get_min_max_distance(tree.hyper_recs[index], point)
-    if min_d > best_dists[k]
+    if min_d > peek(pq)[2]
        return
     end
     if is_leaf_node(tree, index)
         dist_d = euclidean_distance(get_point(tree, index), point)
-        if dist_d <= best_dists[k] # Closer than the currently k closest.
-            ins_point = 1
-            while(ins_point < k && dist_d > best_dists[ins_point]) # Look through best_dists for insertion point
-                ins_point +=1
-            end
-            for (i in k:-1:ins_point+1) # Shift down
-                 best_idxs[i] = best_idxs[i-1]
-                 best_dists[i]  = best_dists[i-1]
-            end
-            # Update with new values
-            best_idxs[ins_point] = index
-            best_dists[ins_point] = dist_d
+        if dist_d <= peek(pq)[2] # Closer than the currently k closest.
+           dequeue!(pq)
+           enqueue!(pq, index, dist_d)
         end
         return
     end
 
     if point[tree.split_dims[index]] < tree.split_vals[index]
-        _k_nearest_neighbour(tree, point, k, best_idxs, best_dists, get_left_node(index))
-        _k_nearest_neighbour(tree, point, k, best_idxs, best_dists, get_right_node(index))
+        _k_nearest_neighbour(tree, point, k, pq, get_left_node(index))
+        _k_nearest_neighbour(tree, point, k, pq, get_right_node(index))
     else
-        _k_nearest_neighbour(tree, point, k, best_idxs, best_dists, get_right_node(index))
-        _k_nearest_neighbour(tree, point, k,best_idxs, best_dists,  get_left_node(index))
+        _k_nearest_neighbour(tree, point, k, pq, get_right_node(index))
+        _k_nearest_neighbour(tree, point, k, pq, get_left_node(index))
     end
 end
 # Returns the indices for all points in the tree inside a
